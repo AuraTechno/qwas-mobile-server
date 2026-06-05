@@ -22,6 +22,48 @@ func NewCallsHandler(d *db.DB, c *config.Config, h *ws.Hub) *CallsHandler {
 	return &CallsHandler{DB: d, Cfg: c, Hub: h}
 }
 
+// GET /api/v1/calls — список звонков пользователя
+func (h *CallsHandler) List(c *fiber.Ctx) error {
+	userID := c.Locals("userId").(int64)
+	rows, err := h.DB.Pool.Query(c.Context(), `
+		SELECT cl.id, cl.chat_id, cl.initiator_id, cl.type, cl.status,
+		       cl.started_at, cl.answered_at, cl.ended_at
+		FROM calls cl
+		JOIN chat_members cm ON cm.chat_id = cl.chat_id
+		WHERE cm.user_id = $1
+		ORDER BY cl.started_at DESC
+		LIMIT 100
+	`, userID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
+	}
+	defer rows.Close()
+
+	var calls []fiber.Map
+	for rows.Next() {
+		var id, chatID, initiatorID int64
+		var callType, status string
+		var startedAt, answeredAt, endedAt *time.Time
+		if err := rows.Scan(&id, &chatID, &initiatorID, &callType, &status, &startedAt, &answeredAt, &endedAt); err != nil {
+			continue
+		}
+		calls = append(calls, fiber.Map{
+			"id":          id,
+			"chatId":      chatID,
+			"initiatorId": initiatorID,
+			"type":        callType,
+			"status":      status,
+			"startedAt":   startedAt,
+			"answeredAt":  answeredAt,
+			"endedAt":     endedAt,
+		})
+	}
+	if calls == nil {
+		calls = []fiber.Map{}
+	}
+	return c.JSON(fiber.Map{"ok": true, "calls": calls})
+}
+
 // GET /api/v1/ice — TURN/STUN credentials
 // Returns short-lived credentials derived from a secret
 func (h *CallsHandler) Ice(c *fiber.Ctx) error {

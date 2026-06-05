@@ -173,6 +173,7 @@ func main() {
 	authed.Get("/ice", callH.Ice)
 	authed.Post("/chats/:id/calls", callH.Initiate)
 	authed.Post("/calls/:id/accept", callH.Accept)
+	authed.Get("/calls", callH.List)
 	authed.Post("/calls/:id/reject", callH.Reject)
 	authed.Post("/calls/:id/end", callH.End)
 
