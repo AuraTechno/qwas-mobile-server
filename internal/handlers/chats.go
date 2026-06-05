@@ -393,3 +393,41 @@ func (h *ChatsHandler) Leave(c *fiber.Ctx) error {
 	}
 	return c.JSON(chatResp{OK: true})
 }
+
+// POST /api/v1/chats/:id/mute  body: { durationHours: number | 0 for unmute }
+func (h *ChatsHandler) Mute(c *fiber.Ctx) error {
+	userID := c.Locals("userId").(int64)
+	chatID := int64Param(c, "id")
+
+	var req struct {
+		DurationHours *float64 `json:"durationHours"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(chatResp{Error: "Invalid body"})
+	}
+
+	var isMuted bool
+	var muteUntil *time.Time
+	if req.DurationHours == nil || *req.DurationHours == 0 {
+		isMuted = false
+		muteUntil = nil
+	} else {
+		isMuted = true
+		until := time.Now().Add(time.Duration(*req.DurationHours * float64(time.Hour)))
+		muteUntil = &until
+	}
+
+	_, err := h.DB.Pool.Exec(c.Context(), `
+		UPDATE chat_members SET is_muted=$1, mute_until=$2
+		WHERE chat_id=$3 AND user_id=$4
+	`, isMuted, muteUntil, chatID, userID)
+	if err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+
+	resp := fiber.Map{"ok": true, "isMuted": isMuted}
+	if muteUntil != nil {
+		resp["muteUntil"] = *muteUntil
+	}
+	return c.JSON(resp)
+}

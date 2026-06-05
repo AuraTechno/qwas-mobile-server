@@ -149,6 +149,7 @@ func main() {
 	authed.Post("/chats/:id/leave", ch.Leave)
 	authed.Post("/chats/:id/read", ch.MarkRead)
 	authed.Post("/chats/:id/typing", ch.Typing)
+	authed.Post("/chats/:id/mute", ch.Mute)
 
 	// Messages
 	mh2 := handlers.NewMessagesHandler(d, hub)
