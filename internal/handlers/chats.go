@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"log"
 	"strings"
 	"time"
 
@@ -55,7 +54,6 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 		ORDER BY c.updated_at DESC
 	`, userID)
 	if err != nil {
-		log.Printf("chats.List: query error: %v", err)
 		return c.Status(500).JSON(chatResp{Error: "DB error"})
 	}
 	defer rows.Close()
@@ -88,7 +86,6 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 		if err := rows.Scan(&ci.ID, &ci.Type, &ci.Name, &ci.Description, &ci.AvatarURL, &ci.AvatarColor, &ci.OwnerID, &ci.PinnedMsgID, &ci.CreatedAt, &ci.UpdatedAt,
 			&ci.LastMsgID, &ci.LastMsgContent, &ci.LastMsgType, &ci.LastMsgAt, &ci.LastMsgSender, &ci.LastMsgSenderName,
 			&ci.LastReadMsgID, &ci.IsMuted, &ci.NotifsEnabled); err != nil {
-			log.Printf("chats.List: scan error: %v", err)
 			continue
 		}
 
