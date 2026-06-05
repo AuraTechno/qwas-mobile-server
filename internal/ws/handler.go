@@ -1,19 +1,19 @@
 package ws
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/auth"
 	"github.com/gofiber/contrib/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
 	Hub  *Hub
 	Auth *auth.Manager
-	DB   *sql.DB
+	DB   *pgxpool.Pool
 }
 
 // WebSocket upgrade middleware (validates JWT from query/header before upgrade)
@@ -124,7 +124,7 @@ func (h *Handler) Handle(c *websocket.Conn) {
 			if h.DB == nil {
 				continue
 			}
-			rows, err := h.DB.Query("SELECT user_id FROM chat_members WHERE chat_id = $1", p.ChatID)
+			rows, err := h.DB.Query(c.Context(), "SELECT user_id FROM chat_members WHERE chat_id = $1", p.ChatID)
 			if err != nil {
 				continue
 			}
