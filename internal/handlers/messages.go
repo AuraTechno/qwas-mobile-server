@@ -5,15 +5,17 @@ import (
 	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
+	"github.com/AuraTechno/qwas-mobile-server/internal/ws"
 	"github.com/gofiber/fiber/v2"
 )
 
 type MessagesHandler struct {
-	DB *db.DB
+	DB  *db.DB
+	Hub *ws.Hub
 }
 
-func NewMessagesHandler(d *db.DB) *MessagesHandler {
-	return &MessagesHandler{DB: d}
+func NewMessagesHandler(d *db.DB, hub *ws.Hub) *MessagesHandler {
+	return &MessagesHandler{DB: d, Hub: hub}
 }
 
 type sendMessageReq struct {
@@ -172,7 +174,7 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 	}
 
 	// Get all members for broadcast
-	memberRows, _ := h.DB.Pool.Query(c.Context(), `SELECT user_id FROM chat_members WHERE chat_id=$1 AND user_id<>$2`, chatID, userID)
+	memberRows, _ := h.DB.Pool.Query(c.Context(), `SELECT user_id FROM chat_members WHERE chat_id=$1`, chatID)
 	defer memberRows.Close()
 	var memberIDs []int64
 	for memberRows.Next() {
@@ -181,7 +183,26 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 			memberIDs = append(memberIDs, id)
 		}
 	}
-	memberIDs = append(memberIDs, userID) // include sender for echo
+
+	msgPayload := fiber.Map{
+		"id":          id,
+		"chatId":      chatID2,
+		"senderId":    senderID,
+		"senderName":  senderName,
+		"senderColor": senderColor,
+		"type":        msgType,
+		"content":     content,
+		"mediaUrl":    mediaURL,
+		"mediaMeta":   mediaMeta,
+		"replyToId":   replyToID,
+		"createdAt":   createdAt,
+		"editedAt":    editedAt,
+	}
+	for _, mid := range memberIDs {
+		if h.Hub != nil {
+			h.Hub.SendToUser(mid, "new_message", msgPayload)
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"ok":         true,

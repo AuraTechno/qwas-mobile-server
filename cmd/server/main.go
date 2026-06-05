@@ -151,7 +151,7 @@ func main() {
 	authed.Post("/chats/:id/typing", ch.Typing)
 
 	// Messages
-	mh2 := handlers.NewMessagesHandler(d)
+	mh2 := handlers.NewMessagesHandler(d, hub)
 	authed.Get("/chats/:id/messages", mh2.List)
 	authed.Post("/chats/:id/messages", mh2.Send)
 	authed.Delete("/messages/:id", mh2.Delete)
