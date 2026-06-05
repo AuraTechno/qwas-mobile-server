@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -40,12 +41,12 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 	rows, err := h.DB.Pool.Query(c.Context(), `
 		SELECT c.id, c.type, COALESCE(c.name,''), COALESCE(c.description,''), COALESCE(c.avatar_url,''), COALESCE(c.avatar_color,''),
 		       c.owner_id, c.pinned_message_id, c.created_at, c.updated_at,
-		       (SELECT m.id FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_id,
-		       (SELECT m.content FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_content,
-		       (SELECT m.type FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_type,
-		       (SELECT m.created_at FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_at,
-		       (SELECT m.sender_id FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_sender,
-		       (SELECT u.display_name FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.created_at DESC LIMIT 1) AS last_msg_sender_name,
+		       (SELECT m.id FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_id,
+		       (SELECT m.content FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_content,
+		       (SELECT m.type FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_type,
+		       (SELECT m.created_at FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_at,
+		       (SELECT m.sender_id FROM messages m WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_sender,
+		       (SELECT u.display_name FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.chat_id=c.id AND m.is_deleted=false ORDER BY m.id DESC LIMIT 1) AS last_msg_sender_name,
 		       COALESCE(cm.last_read_message_id, 0),
 		       cm.is_muted, cm.notifications_enabled
 		FROM chats c
@@ -54,6 +55,7 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 		ORDER BY c.updated_at DESC
 	`, userID)
 	if err != nil {
+		log.Printf("chats.List: query error: %v", err)
 		return c.Status(500).JSON(chatResp{Error: "DB error"})
 	}
 	defer rows.Close()
@@ -86,6 +88,7 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 		if err := rows.Scan(&ci.ID, &ci.Type, &ci.Name, &ci.Description, &ci.AvatarURL, &ci.AvatarColor, &ci.OwnerID, &ci.PinnedMsgID, &ci.CreatedAt, &ci.UpdatedAt,
 			&ci.LastMsgID, &ci.LastMsgContent, &ci.LastMsgType, &ci.LastMsgAt, &ci.LastMsgSender, &ci.LastMsgSenderName,
 			&ci.LastReadMsgID, &ci.IsMuted, &ci.NotifsEnabled); err != nil {
+			log.Printf("chats.List: scan error: %v", err)
 			continue
 		}
 
