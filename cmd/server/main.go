@@ -50,7 +50,7 @@ func main() {
 
 	// WebSocket hub
 	hub := ws.NewHub()
-	wsH := &ws.Handler{Hub: hub, Auth: am, DB: db}
+	wsH := &ws.Handler{Hub: hub, Auth: am, DB: d.Pool}
 
 	// Fiber
 	app := fiber.New(fiber.Config{
