@@ -6,8 +6,8 @@
 *.dylib
 *.test
 *.out
-qwas-app-server
-server
+/qwas-app-server
+/server
 
 # Local config
 .env
