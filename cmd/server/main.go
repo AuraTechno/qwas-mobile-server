@@ -158,7 +158,7 @@ func main() {
 	authed.Patch("/messages/:id", mh2.Edit)
 
 	// Reactions + Pinned
-	rh := handlers.NewReactionsHandler(d)
+	rh := handlers.NewReactionsHandler(d, hub)
 	ph := handlers.NewPinnedHandler(d)
 	authed.Put("/messages/:id/reactions", rh.Toggle)
 	authed.Get("/messages/:id/reactions", rh.List)

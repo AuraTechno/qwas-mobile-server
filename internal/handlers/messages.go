@@ -19,11 +19,12 @@ func NewMessagesHandler(d *db.DB, hub *ws.Hub) *MessagesHandler {
 }
 
 type sendMessageReq struct {
-	Type      string  `json:"type"`      // text, image, video, voice, file, system
-	Content   string  `json:"content"`
-	MediaURL  string  `json:"mediaUrl"`
-	MediaMeta *string `json:"mediaMeta"` // JSON string
-	ReplyToID *int64  `json:"replyToId"`
+	Type            string  `json:"type"`            // text, image, video, voice, file, system
+	Content         string  `json:"content"`
+	MediaURL        string  `json:"mediaUrl"`
+	MediaMeta       *string `json:"mediaMeta"`       // JSON string
+	ReplyToID       *int64  `json:"replyToId"`
+	ForwardedFromID *int64  `json:"forwardedFromId"`
 }
 
 // GET /api/v1/chats/:id/messages?limit=50&before=ID
@@ -141,10 +142,10 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 
 	var msgID int64
 	err = tx.QueryRow(c.Context(), `
-		INSERT INTO messages (chat_id, sender_id, type, content, media_url, media_meta, reply_to_id)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+		INSERT INTO messages (chat_id, sender_id, type, content, media_url, media_meta, reply_to_id, forwarded_from_id)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
 		RETURNING id
-	`, chatID, userID, req.Type, req.Content, req.MediaURL, req.MediaMeta, req.ReplyToID).Scan(&msgID)
+	`, chatID, userID, req.Type, req.Content, req.MediaURL, req.MediaMeta, req.ReplyToID, req.ForwardedFromID).Scan(&msgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
 	}
@@ -225,6 +226,12 @@ func (h *MessagesHandler) Delete(c *fiber.Ctx) error {
 	userID := c.Locals("userId").(int64)
 	msgID := int64Param(c, "id")
 
+	var chatID int64
+	_ = h.DB.Pool.QueryRow(c.Context(), `SELECT chat_id FROM messages WHERE id=$1 AND sender_id=$2`, msgID, userID).Scan(&chatID)
+	if chatID == 0 {
+		return c.Status(403).JSON(fiber.Map{"ok": false, "error": "Cannot delete"})
+	}
+
 	res, err := h.DB.Pool.Exec(c.Context(), `UPDATE messages SET is_deleted=true, content='', media_url='' WHERE id=$1 AND sender_id=$2`, msgID, userID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
@@ -232,6 +239,25 @@ func (h *MessagesHandler) Delete(c *fiber.Ctx) error {
 	if res.RowsAffected() == 0 {
 		return c.Status(403).JSON(fiber.Map{"ok": false, "error": "Cannot delete"})
 	}
+
+	if h.Hub != nil {
+		memberRows, _ := h.DB.Pool.Query(c.Context(), `SELECT user_id FROM chat_members WHERE chat_id=$1`, chatID)
+		defer memberRows.Close()
+		var memberIDs []int64
+		for memberRows.Next() {
+			var id int64
+			if err := memberRows.Scan(&id); err == nil {
+				memberIDs = append(memberIDs, id)
+			}
+		}
+		for _, mid := range memberIDs {
+			h.Hub.SendToUser(mid, "message_deleted", fiber.Map{
+				"id":     msgID,
+				"chatId": chatID,
+			})
+		}
+	}
+
 	return c.JSON(fiber.Map{"ok": true})
 }
 
@@ -255,5 +281,30 @@ func (h *MessagesHandler) Edit(c *fiber.Ctx) error {
 	if res.RowsAffected() == 0 {
 		return c.Status(403).JSON(fiber.Map{"ok": false, "error": "Cannot edit"})
 	}
+
+	var chatID int64
+	var content string
+	var editedAt time.Time
+	_ = h.DB.Pool.QueryRow(c.Context(), `SELECT chat_id, content, edited_at FROM messages WHERE id=$1`, msgID).Scan(&chatID, &content, &editedAt)
+	if h.Hub != nil {
+		memberRows, _ := h.DB.Pool.Query(c.Context(), `SELECT user_id FROM chat_members WHERE chat_id=$1`, chatID)
+		defer memberRows.Close()
+		var memberIDs []int64
+		for memberRows.Next() {
+			var id int64
+			if err := memberRows.Scan(&id); err == nil {
+				memberIDs = append(memberIDs, id)
+			}
+		}
+		for _, mid := range memberIDs {
+			h.Hub.SendToUser(mid, "message_edited", fiber.Map{
+				"id":       msgID,
+				"chatId":   chatID,
+				"content":  content,
+				"editedAt": editedAt,
+			})
+		}
+	}
+
 	return c.JSON(fiber.Map{"ok": true})
 }
