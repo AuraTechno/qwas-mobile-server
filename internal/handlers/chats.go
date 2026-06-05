@@ -307,7 +307,7 @@ func (h *ChatsHandler) Get(c *fiber.Ctx) error {
 	`, chatID)
 	var id int64
 	var ctype, name, description, avatarURL, avatarColor string
-	var ownerID int64
+	var ownerID *int64
 	var pinnedMsgID *int64
 	var createdAt, updatedAt time.Time
 	if err := row.Scan(&id, &ctype, &name, &description, &avatarURL, &avatarColor, &ownerID, &pinnedMsgID, &createdAt, &updatedAt); err != nil {
