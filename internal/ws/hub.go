@@ -54,6 +54,15 @@ func (h *Hub) IsOnline(userID int64) bool {
 	return ok
 }
 
+func (h *Hub) IsConnected(userID int64) (struct{}, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if conns, ok := h.clients[userID]; ok && len(conns) > 0 {
+		return struct{}{}, true
+	}
+	return struct{}{}, false
+}
+
 func (h *Hub) OnlineUserIDs() []int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

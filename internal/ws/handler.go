@@ -36,16 +36,61 @@ func (h *Handler) UpgradeMiddleware() func(*websocket.Conn) {
 }
 
 func (h *Handler) Handle(c *websocket.Conn) {
-	userID, _ := c.Locals("userId").(int64)
-	if userID == 0 {
+	// Validate JWT from query token (UpgradeMiddleware is defined but not wired up)
+	token := c.Query("token")
+	if token == "" {
+		_ = c.WriteJSON(map[string]interface{}{"type": "error", "error": "No token"})
 		_ = c.Close()
 		return
 	}
+	claims, err := h.Auth.ParseToken(token)
+	if err != nil {
+		_ = c.WriteJSON(map[string]interface{}{"type": "error", "error": "Invalid token"})
+		_ = c.Close()
+		return
+	}
+	userID := claims.UserID
+	c.Locals("userId", userID)
+	c.Locals("username", claims.Username)
 
 	h.Hub.Register(userID, c)
 	defer h.Hub.Unregister(userID, c)
 
+	// Send welcome event so client knows we're connected
+	_ = c.WriteJSON(map[string]interface{}{
+		"event":   "connected",
+		"payload": map[string]interface{}{"userId": userID, "ts": time.Now().UnixMilli()},
+		"ts":      time.Now().UnixMilli(),
+	})
+
 	// Read messages (pongs/keepalive/typing/call signaling)
+	c.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.SetPongHandler(func(string) error {
+		c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			time.Sleep(100 * time.Millisecond)
+			select {
+			case <-ticker.C:
+				if err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+					return
+				}
+			default:
+				if c.Conn == nil {
+					return
+				}
+			}
+			if _, ok := h.Hub.IsConnected(userID); !ok {
+				return
+			}
+		}
+	}()
+
 	for {
 		_, data, err := c.ReadMessage()
 		if err != nil {
