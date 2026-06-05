@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
@@ -62,7 +63,7 @@ func (h *ReactionsHandler) Toggle(c *fiber.Ctx) error {
 }
 
 func (h *ReactionsHandler) broadcastReaction(chatID, msgID, userID int64, emoji string, active bool) {
-	memberRows, _ := h.DB.Pool.Query(c.Context(), `SELECT user_id FROM chat_members WHERE chat_id=$1`, chatID)
+	memberRows, _ := h.DB.Pool.Query(context.Background(), `SELECT user_id FROM chat_members WHERE chat_id=$1`, chatID)
 	defer memberRows.Close()
 	var memberIDs []int64
 	for memberRows.Next() {
