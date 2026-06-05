@@ -117,5 +117,27 @@ func (h *UsersHandler) UpdateMe(c *fiber.Ctx) error {
 	if req.AvatarURL != nil {
 		_, _ = h.DB.Pool.Exec(c.Context(), `UPDATE users SET avatar_url=$1 WHERE id=$2`, *req.AvatarURL, userID)
 	}
-	return c.JSON(fiber.Map{"ok": true})
+	var uname, displayName, bio, avatarURL, avatarColor string
+	var isOnline bool
+	var lastSeen time.Time
+	err := h.DB.Pool.QueryRow(c.Context(), `
+		SELECT username, COALESCE(display_name,''), COALESCE(bio,''), COALESCE(avatar_url,''), COALESCE(avatar_color,''), is_online, last_seen
+		FROM users WHERE id=$1
+	`, userID).Scan(&uname, &displayName, &bio, &avatarURL, &avatarColor, &isOnline, &lastSeen)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "Failed to load user"})
+	}
+	return c.JSON(fiber.Map{
+		"ok": true,
+		"user": fiber.Map{
+			"id":          userID,
+			"username":    uname,
+			"displayName": displayName,
+			"bio":         bio,
+			"avatarUrl":   avatarURL,
+			"avatarColor": avatarColor,
+			"isOnline":    isOnline,
+			"lastSeen":    lastSeen,
+		},
+	})
 }
