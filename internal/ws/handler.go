@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"time"
@@ -12,6 +13,7 @@ import (
 type Handler struct {
 	Hub  *Hub
 	Auth *auth.Manager
+	DB   *sql.DB
 }
 
 // WebSocket upgrade middleware (validates JWT from query/header before upgrade)
@@ -109,7 +111,6 @@ func (h *Handler) Handle(c *websocket.Conn) {
 		case "ping":
 			_ = c.WriteJSON(map[string]interface{}{"type": "pong", "ts": time.Now().UnixMilli()})
 		case "typing":
-			// payload: {chatId, isTyping}
 			var p struct {
 				ChatID   int64 `json:"chatId"`
 				IsTyping bool  `json:"isTyping"`
@@ -117,8 +118,35 @@ func (h *Handler) Handle(c *websocket.Conn) {
 			if err := json.Unmarshal(msg.Payload, &p); err != nil {
 				continue
 			}
-			// Resolve chat members and broadcast (excluding self)
-			// Skipped here for brevity; could query DB if needed
+			if p.ChatID == 0 {
+				continue
+			}
+			if h.DB == nil {
+				continue
+			}
+			rows, err := h.DB.Query("SELECT user_id FROM chat_members WHERE chat_id = $1", p.ChatID)
+			if err != nil {
+				continue
+			}
+			var memberIDs []int64
+			for rows.Next() {
+				var uid int64
+				if err := rows.Scan(&uid); err == nil {
+					memberIDs = append(memberIDs, uid)
+				}
+			}
+			rows.Close()
+			ev := map[string]interface{}{
+				"chatId":   p.ChatID,
+				"userId":   userID,
+				"isTyping": p.IsTyping,
+			}
+			for _, uid := range memberIDs {
+				if uid == userID {
+					continue
+				}
+				h.Hub.SendToUser(uid, "user_typing", ev)
+			}
 		case "call_offer", "call_answer", "call_ice", "call_end":
 			// WebRTC signaling - forward to target user
 			var p struct {
