@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"regexp"
 	"strconv"
@@ -57,8 +58,11 @@ func (h *AuthHandler) CheckUsername(c *fiber.Ctx) error {
 
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var req registerReq
+	body := c.Body()
+	log.Printf("register: body=%q contentType=%q", string(body), c.Get("Content-Type"))
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"ok": false, "error": "Invalid body"})
+		log.Printf("register: BodyParser error: %v", err)
+		return c.Status(400).JSON(fiber.Map{"ok": false, "error": "Invalid body: " + err.Error()})
 	}
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 
