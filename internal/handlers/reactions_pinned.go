@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
 	"github.com/gofiber/fiber/v2"
 )
@@ -60,15 +62,15 @@ func (h *ReactionsHandler) List(c *fiber.Ctx) error {
 
 	var reactions []fiber.Map
 	for rows.Next() {
-		var r struct {
-			MessageID, UserID, Emoji, CreatedAt
-		}
-		if err := rows.Scan(&r.MessageID, &r.UserID, &r.Emoji, &r.CreatedAt); err == nil {
+		var messageID, userID int64
+		var emoji string
+		var createdAt time.Time
+		if err := rows.Scan(&messageID, &userID, &emoji, &createdAt); err == nil {
 			reactions = append(reactions, fiber.Map{
-				"messageId": r.MessageID,
-				"userId":    r.UserID,
-				"emoji":     r.Emoji,
-				"createdAt": r.CreatedAt,
+				"messageId": messageID,
+				"userId":    userID,
+				"emoji":     emoji,
+				"createdAt": createdAt,
 			})
 		}
 	}

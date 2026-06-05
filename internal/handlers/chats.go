@@ -59,9 +59,25 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 	defer rows.Close()
 
 	type chatItem struct {
-		ID, Type, Name, Description, AvatarURL, AvatarColor, OwnerID, PinnedMsgID,
-		LastMsgID, LastMsgContent, LastMsgType, LastMsgAt, LastMsgSender, LastMsgSenderName,
-		LastReadMsgID, IsMuted, NotifsEnabled, CreatedAt, UpdatedAt
+		ID                int64
+		Type              string
+		Name              string
+		Description       string
+		AvatarURL         string
+		AvatarColor       string
+		OwnerID           int64
+		PinnedMsgID       *int64
+		CreatedAt         time.Time
+		UpdatedAt         time.Time
+		LastMsgID         *int64
+		LastMsgContent    *string
+		LastMsgType       *string
+		LastMsgAt         *time.Time
+		LastMsgSender     *int64
+		LastMsgSenderName *string
+		LastReadMsgID     int64
+		IsMuted           bool
+		NotifsEnabled     bool
 	}
 
 	var chats []fiber.Map
@@ -148,19 +164,20 @@ func (h *ChatsHandler) getMembers(ctx context.Context, chatID int64) []fiber.Map
 
 	var members []fiber.Map
 	for rows.Next() {
-		var m struct {
-			ID, Username, DisplayName, AvatarURL, AvatarColor, IsOnline, LastSeen, Role
-		}
-		if err := rows.Scan(&m.ID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.AvatarColor, &m.IsOnline, &m.LastSeen, &m.Role); err == nil {
+		var id int64
+		var username, displayName, avatarURL, avatarColor, role string
+		var isOnline bool
+		var lastSeen time.Time
+		if err := rows.Scan(&id, &username, &displayName, &avatarURL, &avatarColor, &isOnline, &lastSeen, &role); err == nil {
 			members = append(members, fiber.Map{
-				"id":          m.ID,
-				"username":    m.Username,
-				"displayName": m.DisplayName,
-				"avatarUrl":   m.AvatarURL,
-				"avatarColor": m.AvatarColor,
-				"isOnline":    m.IsOnline,
-				"lastSeen":    m.LastSeen,
-				"role":        m.Role,
+				"id":          id,
+				"username":    username,
+				"displayName": displayName,
+				"avatarUrl":   avatarURL,
+				"avatarColor": avatarColor,
+				"isOnline":    isOnline,
+				"lastSeen":    lastSeen,
+				"role":        role,
 			})
 		}
 	}
@@ -288,25 +305,28 @@ func (h *ChatsHandler) Get(c *fiber.Ctx) error {
 		       owner_id, pinned_message_id, created_at, updated_at
 		FROM chats WHERE id=$1
 	`, chatID)
-	var ci struct {
-		ID, Type, Name, Description, AvatarURL, AvatarColor, OwnerID, PinnedMsgID, CreatedAt, UpdatedAt
-	}
-	if err := row.Scan(&ci.ID, &ci.Type, &ci.Name, &ci.Description, &ci.AvatarURL, &ci.AvatarColor, &ci.OwnerID, &ci.PinnedMsgID, &ci.CreatedAt, &ci.UpdatedAt); err != nil {
+	var id int64
+	var ctype, name, description, avatarURL, avatarColor string
+	var ownerID int64
+	var pinnedMsgID *int64
+	var createdAt, updatedAt time.Time
+	if err := row.Scan(&id, &ctype, &name, &description, &avatarURL, &avatarColor, &ownerID, &pinnedMsgID, &createdAt, &updatedAt); err != nil {
 		return c.Status(404).JSON(chatResp{Error: "Chat not found"})
 	}
 
 	members := h.getMembers(c.UserContext(), chatID)
+	_ = members
 	return c.JSON(chatResp{OK: true, Chat: fiber.Map{
-		"id":              ci.ID,
-		"type":            ci.Type,
-		"name":            ci.Name,
-		"description":     ci.Description,
-		"avatarUrl":       ci.AvatarURL,
-		"avatarColor":     ci.AvatarColor,
-		"ownerId":         ci.OwnerID,
-		"pinnedMessageId": ci.PinnedMsgID,
-		"createdAt":       ci.CreatedAt,
-		"updatedAt":       ci.UpdatedAt,
+		"id":              id,
+		"type":            ctype,
+		"name":            name,
+		"description":     description,
+		"avatarUrl":       avatarURL,
+		"avatarColor":     avatarColor,
+		"ownerId":         ownerID,
+		"pinnedMessageId": pinnedMsgID,
+		"createdAt":       createdAt,
+		"updatedAt":       updatedAt,
 		"members":         members,
 	}})
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
 	"github.com/gofiber/fiber/v2"
@@ -65,27 +66,31 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 
 	var messages []fiber.Map
 	for rows.Next() {
-		var m struct {
-			ID, ChatID, SenderID, SenderUsername, SenderName, SenderColor,
-			Type, Content, MediaURL, MediaMeta, ReplyToID, CreatedAt, EditedAt
-		}
-		if err := rows.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderUsername, &m.SenderName, &m.SenderColor,
-			&m.Type, &m.Content, &m.MediaURL, &m.MediaMeta, &m.ReplyToID, &m.CreatedAt, &m.EditedAt); err != nil {
+		var id, chatID, senderID, replyToID int64
+		var replyToPtr *int64
+		var senderUsername, senderName, senderColor, msgType, content, mediaURL, mediaMeta string
+		var createdAt time.Time
+		var editedAt *time.Time
+		if err := rows.Scan(&id, &chatID, &senderID, &senderUsername, &senderName, &senderColor,
+			&msgType, &content, &mediaURL, &mediaMeta, &replyToPtr, &createdAt, &editedAt); err != nil {
 			continue
 		}
+		if replyToPtr != nil {
+			replyToID = *replyToPtr
+		}
 		messages = append(messages, fiber.Map{
-			"id":          m.ID,
-			"chatId":      m.ChatID,
-			"senderId":    m.SenderID,
-			"senderName":  m.SenderName,
-			"senderColor": m.SenderColor,
-			"type":        m.Type,
-			"content":     m.Content,
-			"mediaUrl":    m.MediaURL,
-			"mediaMeta":   m.MediaMeta,
-			"replyToId":   m.ReplyToID,
-			"createdAt":   m.CreatedAt,
-			"editedAt":    m.EditedAt,
+			"id":          id,
+			"chatId":      chatID,
+			"senderId":    senderID,
+			"senderName":  senderName,
+			"senderColor": senderColor,
+			"type":        msgType,
+			"content":     content,
+			"mediaUrl":    mediaURL,
+			"mediaMeta":   mediaMeta,
+			"replyToId":   replyToPtr,
+			"createdAt":   createdAt,
+			"editedAt":    editedAt,
 		})
 	}
 	if messages == nil {
@@ -149,17 +154,18 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 	_, _ = tx.Exec(c.Context(), `UPDATE chats SET updated_at=NOW() WHERE id=$1`, chatID)
 
 	// Fetch the full message
-	var msg struct {
-		ID, ChatID, SenderID, SenderUsername, SenderName, SenderColor,
-		Type, Content, MediaURL, MediaMeta, ReplyToID, CreatedAt, EditedAt
-	}
+	var id, chatID2, senderID int64
+	var senderUsername, senderName, senderColor, msgType, content, mediaURL, mediaMeta string
+	var replyToID *int64
+	var createdAt time.Time
+	var editedAt *time.Time
 	err = tx.QueryRow(c.Context(), `
 		SELECT m.id, m.chat_id, m.sender_id, u.username, u.display_name, u.avatar_color,
 		       m.type, m.content, COALESCE(m.media_url,''), COALESCE(m.media_meta::text,''), m.reply_to_id, m.created_at, m.edited_at
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.id=$1
-	`, msgID).Scan(&msg.ID, &msg.ChatID, &msg.SenderID, &msg.SenderUsername, &msg.SenderName, &msg.SenderColor,
-		&msg.Type, &msg.Content, &msg.MediaURL, &msg.MediaMeta, &msg.ReplyToID, &msg.CreatedAt, &msg.EditedAt)
+	`, msgID).Scan(&id, &chatID2, &senderID, &senderUsername, &senderName, &senderColor,
+		&msgType, &content, &mediaURL, &mediaMeta, &replyToID, &createdAt, &editedAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
 	}
@@ -182,16 +188,16 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"ok":         true,
-		"id":         msg.ID,
-		"chatId":     msg.ChatID,
-		"senderId":   msg.SenderID,
-		"senderName": msg.SenderName,
-		"type":       msg.Type,
-		"content":    msg.Content,
-		"mediaUrl":   msg.MediaURL,
-		"mediaMeta":  msg.MediaMeta,
-		"replyToId":  msg.ReplyToID,
-		"createdAt":  msg.CreatedAt,
+		"id":         id,
+		"chatId":     chatID2,
+		"senderId":   senderID,
+		"senderName": senderName,
+		"type":       msgType,
+		"content":    content,
+		"mediaUrl":   mediaURL,
+		"mediaMeta":  mediaMeta,
+		"replyToId":  replyToID,
+		"createdAt":  createdAt,
 		"members":    memberIDs,
 	})
 }

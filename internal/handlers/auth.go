@@ -7,9 +7,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/auth"
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
+	"github.com/AuraTechno/qwas-mobile-server/internal/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -160,15 +162,11 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	userID := c.Locals("userId").(int64)
-	row := h.DB.Pool.QueryRow(c.Context(), `
+	var u models.User
+	err := h.DB.Pool.QueryRow(c.Context(), `
 		SELECT id, username, COALESCE(display_name,''), COALESCE(bio,''), COALESCE(avatar_url,''), COALESCE(avatar_color,''), is_online, last_seen, created_at
 		FROM users WHERE id=$1
-	`, userID)
-
-	var u struct {
-		ID, Username, DisplayName, Bio, AvatarURL, AvatarColor, IsOnline, LastSeen, CreatedAt
-	}
-	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.AvatarColor, &u.IsOnline, &u.LastSeen, &u.CreatedAt)
+	`, userID).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.AvatarColor, &u.IsOnline, &u.LastSeen, &u.CreatedAt)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"ok": false, "error": "User not found"})
 	}
@@ -209,18 +207,20 @@ func (h *AuthHandler) GetSessions(c *fiber.Ctx) error {
 
 	var sessions []fiber.Map
 	for rows.Next() {
-		var s struct {
-			ID, DeviceInfo, IP, LastActive, CreatedAt
-		}
-		if err := rows.Scan(&s.ID, &s.DeviceInfo, &s.IP, &s.LastActive, &s.CreatedAt); err == nil {
+		var id, deviceInfo, ip string
+		var lastActive, createdAt time.Time
+		if err := rows.Scan(&id, &deviceInfo, &ip, &lastActive, &createdAt); err == nil {
 			sessions = append(sessions, fiber.Map{
-				"id":         s.ID,
-				"deviceInfo": s.DeviceInfo,
-				"ip":         s.IP,
-				"lastActive": s.LastActive,
-				"createdAt":  s.CreatedAt,
+				"id":         id,
+				"deviceInfo": deviceInfo,
+				"ip":         ip,
+				"lastActive": lastActive,
+				"createdAt":  createdAt,
 			})
 		}
+	}
+	if sessions == nil {
+		sessions = []fiber.Map{}
 	}
 	return c.JSON(fiber.Map{"ok": true, "sessions": sessions})
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strings"
+	"time"
 
 	"github.com/AuraTechno/qwas-mobile-server/internal/db"
 	"github.com/gofiber/fiber/v2"
@@ -35,18 +36,19 @@ func (h *UsersHandler) Search(c *fiber.Ctx) error {
 
 	var users []fiber.Map
 	for rows.Next() {
-		var u struct {
-			ID, Username, DisplayName, AvatarURL, AvatarColor, IsOnline, LastSeen
-		}
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.AvatarURL, &u.AvatarColor, &u.IsOnline, &u.LastSeen); err == nil {
+		var id int64
+		var username, displayName, avatarURL, avatarColor string
+		var isOnline bool
+		var lastSeen time.Time
+		if err := rows.Scan(&id, &username, &displayName, &avatarURL, &avatarColor, &isOnline, &lastSeen); err == nil {
 			users = append(users, fiber.Map{
-				"id":          u.ID,
-				"username":    u.Username,
-				"displayName": u.DisplayName,
-				"avatarUrl":   u.AvatarURL,
-				"avatarColor": u.AvatarColor,
-				"isOnline":    u.IsOnline,
-				"lastSeen":    u.LastSeen,
+				"id":          id,
+				"username":    username,
+				"displayName": displayName,
+				"avatarUrl":   avatarURL,
+				"avatarColor": avatarColor,
+				"isOnline":    isOnline,
+				"lastSeen":    lastSeen,
 			})
 		}
 	}
@@ -59,27 +61,27 @@ func (h *UsersHandler) Search(c *fiber.Ctx) error {
 // GET /api/v1/users/:username
 func (h *UsersHandler) GetByUsername(c *fiber.Ctx) error {
 	username := strings.ToLower(strings.TrimSpace(c.Params("username")))
-	row := h.DB.Pool.QueryRow(c.Context(), `
+	var id int64
+	var uname, displayName, bio, avatarURL, avatarColor string
+	var isOnline bool
+	var lastSeen time.Time
+	err := h.DB.Pool.QueryRow(c.Context(), `
 		SELECT id, username, COALESCE(display_name,''), COALESCE(bio,''), COALESCE(avatar_url,''), COALESCE(avatar_color,''), is_online, last_seen
 		FROM users WHERE LOWER(username)=$1
-	`, username)
-
-	var u struct {
-		ID, Username, DisplayName, Bio, AvatarURL, AvatarColor, IsOnline, LastSeen
-	}
-	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.AvatarColor, &u.IsOnline, &u.LastSeen); err != nil {
+	`, username).Scan(&id, &uname, &displayName, &bio, &avatarURL, &avatarColor, &isOnline, &lastSeen)
+	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"ok": false, "error": "User not found"})
 	}
 	return c.JSON(fiber.Map{
 		"ok":          true,
-		"id":          u.ID,
-		"username":    u.Username,
-		"displayName": u.DisplayName,
-		"bio":         u.Bio,
-		"avatarUrl":   u.AvatarURL,
-		"avatarColor": u.AvatarColor,
-		"isOnline":    u.IsOnline,
-		"lastSeen":    u.LastSeen,
+		"id":          id,
+		"username":    uname,
+		"displayName": displayName,
+		"bio":         bio,
+		"avatarUrl":   avatarURL,
+		"avatarColor": avatarColor,
+		"isOnline":    isOnline,
+		"lastSeen":    lastSeen,
 	})
 }
 
