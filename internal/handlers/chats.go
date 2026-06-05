@@ -394,6 +394,52 @@ func (h *ChatsHandler) Leave(c *fiber.Ctx) error {
 	return c.JSON(chatResp{OK: true})
 }
 
+// GET /api/v1/chats/self — Saved Messages (chat with yourself)
+func (h *ChatsHandler) Self(c *fiber.Ctx) error {
+	userID := c.Locals("userId").(int64)
+
+	// Find existing self-chat for this user
+	var chatID int64
+	err := h.DB.Pool.QueryRow(c.Context(), `
+		SELECT id FROM chats
+		WHERE type='self' AND owner_id=$1
+		LIMIT 1
+	`, userID).Scan(&chatID)
+	if err == nil {
+		return c.JSON(chatResp{OK: true, Chat: fiber.Map{"id": chatID, "existing": true, "type": "self"}})
+	}
+
+	// Create self-chat (single member)
+	tx, err := h.DB.Pool.Begin(c.Context())
+	if err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+	defer tx.Rollback(c.Context())
+
+	var displayName string
+	if err := tx.QueryRow(c.Context(), `SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id=$1`, userID).Scan(&displayName); err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+
+	err = tx.QueryRow(c.Context(), `
+		INSERT INTO chats (type, name, owner_id)
+		VALUES ('self', $1, $2) RETURNING id
+	`, "Saved Messages", userID).Scan(&chatID)
+	if err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+	_, err = tx.Exec(c.Context(), `INSERT INTO chat_members (chat_id, user_id, role) VALUES ($1, $2, 'owner')`, chatID, userID)
+	if err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return c.Status(500).JSON(chatResp{Error: "DB error"})
+	}
+
+	_ = displayName
+	return c.JSON(chatResp{OK: true, Chat: fiber.Map{"id": chatID, "existing": false, "type": "self", "name": "Saved Messages"}})
+}
+
 // POST /api/v1/chats/:id/mute  body: { durationHours: number | 0 for unmute }
 func (h *ChatsHandler) Mute(c *fiber.Ctx) error {
 	userID := c.Locals("userId").(int64)

@@ -143,6 +143,7 @@ func main() {
 	// Chats
 	ch := handlers.NewChatsHandler(d)
 	authed.Get("/chats", ch.List)
+	authed.Get("/chats/self", ch.Self)
 	authed.Post("/chats", ch.Create)
 	authed.Get("/chats/:id", ch.Get)
 	authed.Patch("/chats/:id", ch.Update)
