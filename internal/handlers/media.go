@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,7 +71,6 @@ func (h *MediaHandler) Upload(c *fiber.Ctx) error {
 
 	// Organize by date + hash
 	dateDir := time.Now().Format("2006/01/02")
-	relDir := filepath.Join("media", fmt.Sprintf("%d", userID), dateDir)
 	absDir := filepath.Join(h.Cfg.MediaDir, fmt.Sprintf("%d", userID), dateDir)
 	if err := os.MkdirAll(absDir, 0755); err != nil {
 		os.Remove(tmp)

@@ -66,7 +66,7 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 
 	var messages []fiber.Map
 	for rows.Next() {
-		var id, chatID, senderID, replyToID int64
+		var id, chatID, senderID int64
 		var replyToPtr *int64
 		var senderUsername, senderName, senderColor, msgType, content, mediaURL, mediaMeta string
 		var createdAt time.Time
@@ -74,9 +74,6 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 		if err := rows.Scan(&id, &chatID, &senderID, &senderUsername, &senderName, &senderColor,
 			&msgType, &content, &mediaURL, &mediaMeta, &replyToPtr, &createdAt, &editedAt); err != nil {
 			continue
-		}
-		if replyToPtr != nil {
-			replyToID = *replyToPtr
 		}
 		messages = append(messages, fiber.Map{
 			"id":          id,
