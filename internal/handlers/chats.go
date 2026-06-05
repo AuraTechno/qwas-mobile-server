@@ -67,7 +67,7 @@ func (h *ChatsHandler) List(c *fiber.Ctx) error {
 		Description       string
 		AvatarURL         string
 		AvatarColor       string
-		OwnerID           int64
+		OwnerID           *int64
 		PinnedMsgID       *int64
 		CreatedAt         time.Time
 		UpdatedAt         time.Time
