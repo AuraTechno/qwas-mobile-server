@@ -1,0 +1,28 @@
+[Unit]
+Description=QWAS Mobile Server (Go + Fiber)
+After=network.target postgresql.service caddy.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/qwas-mobile-server
+EnvironmentFile=/etc/qwas-app.env
+ExecStart=/opt/qwas-mobile-server/qwas-app-server
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+# Logging
+StandardOutput=append:/var/log/qwas-app/server.log
+StandardError=append:/var/log/qwas-app/server.log
+
+# Hardening
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

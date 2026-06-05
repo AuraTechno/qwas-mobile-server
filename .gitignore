@@ -1,0 +1,28 @@
+# Go
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+qwas-app-server
+server
+
+# Local config
+.env
+.env.local
+*.log
+
+# Media uploads
+/media/
+/var/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# OS
+Thumbs.db
