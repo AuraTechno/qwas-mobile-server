@@ -167,6 +167,11 @@ func main() {
 	authed.Post("/chats/:id/pin-message", ph.Pin)
 	authed.Delete("/chats/:id/pin-message", ph.Unpin)
 
+	// Polls
+	poh := handlers.NewPollsHandler(d, hub)
+	authed.Get("/polls/:id", poh.Get)
+	authed.Post("/polls/:id/vote", poh.Vote)
+
 	// Media
 	authed.Post("/media/upload", mh.Upload)
 

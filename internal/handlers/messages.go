@@ -19,12 +19,22 @@ func NewMessagesHandler(d *db.DB, hub *ws.Hub) *MessagesHandler {
 }
 
 type sendMessageReq struct {
-	Type            string  `json:"type"`            // text, image, video, voice, file, system
-	Content         string  `json:"content"`
-	MediaURL        string  `json:"mediaUrl"`
-	MediaMeta       *string `json:"mediaMeta"`       // JSON string
-	ReplyToID       *int64  `json:"replyToId"`
-	ForwardedFromID *int64  `json:"forwardedFromId"`
+	Type            string   `json:"type"`            // text, image, video, video_note, voice, file, system, location, contact, poll
+	Content         string   `json:"content"`
+	MediaURL        string   `json:"mediaUrl"`
+	MediaMeta       *string  `json:"mediaMeta"`       // JSON string
+	ReplyToID       *int64   `json:"replyToId"`
+	ForwardedFromID *int64   `json:"forwardedFromId"`
+	ExpiresInSec    *int     `json:"expiresInSec"`    // self-destruct timer (TTL in seconds)
+	Poll            *pollReq `json:"poll"`            // when type == "poll"
+}
+
+type pollReq struct {
+	Question    string   `json:"question"`
+	IsAnonymous bool     `json:"isAnonymous"`
+	IsMultiple  bool     `json:"isMultiple"`
+	Options     []string `json:"options"`
+	ClosesInSec *int     `json:"closesInSec"`
 }
 
 // GET /api/v1/chats/:id/messages?limit=50&before=ID
@@ -47,10 +57,11 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 	q := `
 		SELECT m.id, m.chat_id, m.sender_id, COALESCE(u.username,''), COALESCE(u.display_name,''), COALESCE(u.avatar_color,''),
 		       m.type, COALESCE(m.content,''), COALESCE(m.media_url,''), COALESCE(m.media_meta::text,''),
-		       m.reply_to_id, m.created_at, m.edited_at
+		       m.reply_to_id, m.created_at, m.edited_at, m.expires_at
 		FROM messages m
 		JOIN users u ON u.id=m.sender_id
 		WHERE m.chat_id=$1 AND m.is_deleted=false
+		  AND (m.expires_at IS NULL OR m.expires_at > NOW())
 	`
 	args := []interface{}{chatID}
 	if before > 0 {
@@ -73,9 +84,9 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 		var replyToPtr *int64
 		var senderUsername, senderName, senderColor, msgType, content, mediaURL, mediaMeta string
 		var createdAt time.Time
-		var editedAt *time.Time
+		var editedAt, expiresAt *time.Time
 		if err := rows.Scan(&id, &chatID, &senderID, &senderUsername, &senderName, &senderColor,
-			&msgType, &content, &mediaURL, &mediaMeta, &replyToPtr, &createdAt, &editedAt); err != nil {
+			&msgType, &content, &mediaURL, &mediaMeta, &replyToPtr, &createdAt, &editedAt, &expiresAt); err != nil {
 			continue
 		}
 		messages = append(messages, fiber.Map{
@@ -91,6 +102,7 @@ func (h *MessagesHandler) List(c *fiber.Ctx) error {
 			"replyToId":   replyToPtr,
 			"createdAt":   createdAt,
 			"editedAt":    editedAt,
+			"expiresAt":   expiresAt,
 		})
 	}
 	if messages == nil {
@@ -124,7 +136,12 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 	if req.Type == "" {
 		req.Type = "text"
 	}
-	if req.Type != "text" && req.Type != "image" && req.Type != "video" && req.Type != "voice" && req.Type != "file" && req.Type != "system" {
+	allowed := map[string]bool{
+		"text": true, "image": true, "video": true, "video_note": true,
+		"voice": true, "file": true, "system": true, "location": true,
+		"contact": true, "poll": true,
+	}
+	if !allowed[req.Type] {
 		return c.JSON(fiber.Map{"ok": false, "error": "Invalid message type"})
 	}
 	if req.Type == "text" && len(req.Content) == 0 {
@@ -133,6 +150,11 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 	if len(req.Content) > 8000 {
 		return c.JSON(fiber.Map{"ok": false, "error": "Message too long (max 8000)"})
 	}
+	if req.Type == "poll" {
+		if req.Poll == nil || req.Poll.Question == "" || len(req.Poll.Options) < 2 || len(req.Poll.Options) > 10 {
+			return c.JSON(fiber.Map{"ok": false, "error": "Poll needs a question and 2-10 options"})
+		}
+	}
 
 	tx, err := h.DB.Pool.Begin(c.Context())
 	if err != nil {
@@ -140,32 +162,72 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 	}
 	defer tx.Rollback(c.Context())
 
+	var expiresAt *time.Time
+	if req.ExpiresInSec != nil && *req.ExpiresInSec > 0 {
+		t := time.Now().Add(time.Duration(*req.ExpiresInSec) * time.Second)
+		expiresAt = &t
+	}
+
 	var msgID int64
 	err = tx.QueryRow(c.Context(), `
-		INSERT INTO messages (chat_id, sender_id, type, content, media_url, media_meta, reply_to_id, forwarded_from_id)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+		INSERT INTO messages (chat_id, sender_id, type, content, media_url, media_meta, reply_to_id, forwarded_from_id, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
 		RETURNING id
-	`, chatID, userID, req.Type, req.Content, req.MediaURL, req.MediaMeta, req.ReplyToID, req.ForwardedFromID).Scan(&msgID)
+	`, chatID, userID, req.Type, req.Content, req.MediaURL, req.MediaMeta, req.ReplyToID, req.ForwardedFromID, expiresAt).Scan(&msgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
 	}
 
+	// Create poll if needed
+	if req.Type == "poll" && req.Poll != nil {
+		var closesAt *time.Time
+		if req.Poll.ClosesInSec != nil && *req.Poll.ClosesInSec > 0 {
+			t := time.Now().Add(time.Duration(*req.Poll.ClosesInSec) * time.Second)
+			closesAt = &t
+		}
+		var pollID int64
+		err = tx.QueryRow(c.Context(), `
+			INSERT INTO polls (message_id, question, is_anonymous, is_multiple, closes_at)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id
+		`, msgID, req.Poll.Question, req.Poll.IsAnonymous, req.Poll.IsMultiple, closesAt).Scan(&pollID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error (poll)"})
+		}
+		for i, opt := range req.Poll.Options {
+			_, err = tx.Exec(c.Context(), `
+				INSERT INTO poll_options (poll_id, text, sort_order) VALUES ($1, $2, $3)
+			`, pollID, opt, i)
+			if err != nil {
+				return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error (poll option)"})
+			}
+		}
+	}
+
 	// Update chat's updated_at
 	_, _ = tx.Exec(c.Context(), `UPDATE chats SET updated_at=NOW() WHERE id=$1`, chatID)
+
+	// If this is a poll, embed the poll id in mediaMeta so the client can fetch it
+	if req.Type == "poll" && req.Poll != nil {
+		var pID int64
+		_ = tx.QueryRow(c.Context(), `SELECT id FROM polls WHERE message_id=$1`, msgID).Scan(&pID)
+		meta := `{"pollId":` + strconv.FormatInt(pID, 10) + `}`
+		req.MediaMeta = &meta
+	}
 
 	// Fetch the full message
 	var id, chatID2, senderID int64
 	var senderUsername, senderName, senderColor, msgType, content, mediaURL, mediaMeta string
 	var replyToID *int64
 	var createdAt time.Time
-	var editedAt *time.Time
+	var editedAt, fetchedExpiresAt *time.Time
 	err = tx.QueryRow(c.Context(), `
 		SELECT m.id, m.chat_id, m.sender_id, u.username, u.display_name, u.avatar_color,
-		       m.type, m.content, COALESCE(m.media_url,''), COALESCE(m.media_meta::text,''), m.reply_to_id, m.created_at, m.edited_at
+		       m.type, m.content, COALESCE(m.media_url,''), COALESCE(m.media_meta::text,''),
+		       m.reply_to_id, m.created_at, m.edited_at, m.expires_at
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.id=$1
 	`, msgID).Scan(&id, &chatID2, &senderID, &senderUsername, &senderName, &senderColor,
-		&msgType, &content, &mediaURL, &mediaMeta, &replyToID, &createdAt, &editedAt)
+		&msgType, &content, &mediaURL, &mediaMeta, &replyToID, &createdAt, &editedAt, &fetchedExpiresAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"ok": false, "error": "DB error"})
 	}
@@ -198,6 +260,7 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 		"replyToId":   replyToID,
 		"createdAt":   createdAt,
 		"editedAt":    editedAt,
+		"expiresAt":   fetchedExpiresAt,
 	}
 	for _, mid := range memberIDs {
 		if h.Hub != nil {
@@ -217,6 +280,7 @@ func (h *MessagesHandler) Send(c *fiber.Ctx) error {
 		"mediaMeta":  mediaMeta,
 		"replyToId":  replyToID,
 		"createdAt":  createdAt,
+		"expiresAt":  fetchedExpiresAt,
 		"members":    memberIDs,
 	})
 }
